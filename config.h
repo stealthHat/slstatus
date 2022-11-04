@@ -70,6 +70,8 @@ static const struct arg args[] = {
 	{ cpu_perc,      "  %s%%", NULL },
 	{ ram_used,      " 💾 %s", NULL },
 	{ ram_total,      "/%s", NULL },
-	{ run_command,      " %s", "battery " },
+	{ battery_perc,      "  %s%%", "BAT0" },
+	{ battery_perc,      "|%s%%", "BAT1" },
 	{ run_command,      " %s ", "internet" },
+	{ run_command,      "", "battery" },
 };
