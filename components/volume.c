@@ -208,60 +208,50 @@ vol_icon(const char *arg)
 	const char *
 	vol_perc(const char *mixname)
 	{
-		snd_mixer_t *mixer = NULL;
-		snd_mixer_selem_id_t *mixid = NULL;
-		snd_mixer_elem_t *elem = NULL;
-		long min = 0, max = 0, volume = -1;
-		int err, sw1, sw2;
+		static snd_ctl_t *ctl;
+		snd_ctl_elem_info_t *info;
+		snd_ctl_elem_value_t *vol, *sw;
+		char name[64];
+		long min, max, volume;
+		int err;
 
-		if ((err = snd_mixer_open(&mixer, 0))) {
-			warn("snd_mixer_open: %d", err);
+		if (!ctl && (err = snd_ctl_open(&ctl, devname, 0)) < 0) {
+			warn("snd_ctl_open(\"%s\"): %d", devname, err);
 			return NULL;
 		}
-		if ((err = snd_mixer_attach(mixer, devname))) {
-			warn("snd_mixer_attach(mixer, \"%s\"): %d", devname, err);
-			goto cleanup;
-		}
-		if ((err = snd_mixer_selem_register(mixer, NULL, NULL))) {
-			warn("snd_mixer_selem_register(mixer, NULL, NULL): %d", err);
-			goto cleanup;
-		}
-		if ((err = snd_mixer_load(mixer))) {
-			warn("snd_mixer_load(mixer): %d", err);
-			goto cleanup;
-		}
 
-		snd_mixer_selem_id_alloca(&mixid);
-		snd_mixer_selem_id_set_name(mixid, mixname);
-		snd_mixer_selem_id_set_index(mixid, 0);
+		snd_ctl_elem_info_alloca(&info);
+		snd_ctl_elem_value_alloca(&vol);
+		snd_ctl_elem_value_alloca(&sw);
 
-		elem = snd_mixer_find_selem(mixer, mixid);
-		if (!elem) {
-			warn("snd_mixer_find_selem(mixer, \"%s\") == NULL", mixname);
+		snprintf(name, sizeof(name), "%s Playback Volume", mixname);
+		snd_ctl_elem_info_set_interface(info, SND_CTL_ELEM_IFACE_MIXER);
+		snd_ctl_elem_info_set_name(info, name);
+		snd_ctl_elem_value_set_interface(vol, SND_CTL_ELEM_IFACE_MIXER);
+		snd_ctl_elem_value_set_name(vol, name);
+		if ((err = snd_ctl_elem_info(ctl, info)) < 0 ||
+		    (err = snd_ctl_elem_read(ctl, vol)) < 0)
 			goto cleanup;
-		}
 
-		if ((err = snd_mixer_selem_get_playback_volume_range(elem, &min, &max))) {
-			warn("snd_mixer_selem_get_playback_volume_range(): %d", err);
+		snprintf(name, sizeof(name), "%s Playback Switch", mixname);
+		snd_ctl_elem_value_set_interface(sw, SND_CTL_ELEM_IFACE_MIXER);
+		snd_ctl_elem_value_set_name(sw, name);
+		if ((err = snd_ctl_elem_read(ctl, sw)) < 0)
 			goto cleanup;
-		}
-		if ((err = snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_MONO, &volume))) {
-			warn("snd_mixer_selem_get_playback_volume(): %d", err);
-		}
-		if ((err = snd_mixer_selem_get_playback_switch(elem, 0, &sw1))) {
-			warn("snd_mixer_selem_get_playback_switch(): %d", err);
-		}
-		if ((err = snd_mixer_selem_get_playback_switch(elem, 1, &sw2))) {
-			warn("snd_mixer_selem_get_playback_switch(): %d", err);
-		}
+
+		min = snd_ctl_elem_info_get_min(info);
+		max = snd_ctl_elem_info_get_max(info);
+		volume = snd_ctl_elem_value_get_integer(vol, 0);
+
+		return bprintf("%s%.0f", snd_ctl_elem_value_get_boolean(sw, 0) ||
+			snd_ctl_elem_value_get_boolean(sw, 1) ? "" : "muted ",
+			(volume-min)*100./(max-min));
 
 	cleanup:
-		snd_mixer_free(mixer);
-		snd_mixer_detach(mixer, devname);
-		snd_mixer_close(mixer);
-
-		return volume == -1 ? NULL : bprintf("%s%.0f",
-			!(sw1 || sw2) ? "muted " : "", (volume-min)*100./(max-min));
+		warn("snd_ctl_elem \"%s\": %d", name, err);
+		snd_ctl_close(ctl);
+		ctl = NULL;
+		return NULL;
 	}
 #else
 	#include <sys/soundcard.h>
